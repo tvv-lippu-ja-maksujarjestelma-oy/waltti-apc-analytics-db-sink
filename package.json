@@ -46,7 +46,8 @@
     "typescript": "^4.5.5"
   },
   "dependencies": {
-    "pino": "^7.6.5"
+    "pino": "^7.6.5",
+    "pulsar-client": "https://github.com/Matt-Esch/pulsar-client-node/tarball/571aa7a5b9598b317400e5a2bfc797cd9120342d"
   },
   "jest": {
     "testPathIgnorePatterns": [
