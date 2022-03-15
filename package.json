@@ -43,6 +43,7 @@
     "eslint-plugin-prettier": "^4.0.0",
     "jest": "^27.4.7",
     "prettier": "^2.5.1",
+    "ts-jest": "^27.1.3",
     "typescript": "^4.5.5"
   },
   "dependencies": {
@@ -50,6 +51,8 @@
     "pulsar-client": "https://github.com/Matt-Esch/pulsar-client-node/tarball/571aa7a5b9598b317400e5a2bfc797cd9120342d"
   },
   "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
     "testPathIgnorePatterns": [
       "./dist"
     ]
