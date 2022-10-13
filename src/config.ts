@@ -32,7 +32,7 @@ export interface Config {
 
 const getRequired = (envVariable: string) => {
   const variable = process.env[envVariable];
-  if (typeof variable === "undefined") {
+  if (variable === undefined) {
     throw new Error(`${envVariable} must be defined`);
   }
   return variable;
@@ -46,7 +46,7 @@ const getOptionalBooleanWithDefault = (
 ) => {
   let result = defaultValue;
   const str = getOptional(envVariable);
-  if (typeof str !== "undefined") {
+  if (str !== undefined) {
     if (!["false", "true"].includes(str)) {
       throw new Error(`${envVariable} must be either "false" or "true"`);
     }
@@ -56,14 +56,14 @@ const getOptionalBooleanWithDefault = (
 };
 
 const getDatabaseClientConfig = () => {
-  const database = getOptional("POSTGRES_DB") || "postgres";
+  const database = getOptional("POSTGRES_DB") ?? "postgres";
   const user = fs.readFileSync(getRequired("POSTGRES_USER_PATH"), "utf8");
   const password = fs.readFileSync(
     getRequired("POSTGRES_PASSWORD_PATH"),
     "utf8"
   );
   const host = getRequired("POSTGRES_HOST");
-  const port = parseInt(getOptional("POSTGRES_PORT") || "5432", 10);
+  const port = parseInt(getOptional("POSTGRES_PORT") ?? "5432", 10);
   const ssl = getOptionalBooleanWithDefault("POSTGRES_USE_SSL", true);
   return {
     database,
@@ -140,7 +140,7 @@ const getPulsarConfig = (logger: pino.Logger): PulsarConfig => {
 };
 
 const getHealthCheckConfig = () => {
-  const port = parseInt(getOptional("HEALTH_CHECK_PORT") || "8080", 10);
+  const port = parseInt(getOptional("HEALTH_CHECK_PORT") ?? "8080", 10);
   return { port };
 };
 
