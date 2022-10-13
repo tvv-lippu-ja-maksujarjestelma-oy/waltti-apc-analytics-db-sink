@@ -86,6 +86,7 @@ const exitGracefully = async (
     const logger = pino({
       name: "waltti-apc-analytics-db-sink",
       timestamp: pino.stdTimeFunctions.isoTime,
+      sync: true,
     });
 
     let setHealthOk: (isOk: boolean) => void;
