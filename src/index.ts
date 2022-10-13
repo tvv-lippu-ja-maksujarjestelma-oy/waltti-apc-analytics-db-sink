@@ -3,7 +3,7 @@ import pino from "pino";
 import type Pulsar from "pulsar-client";
 import { getConfig } from "./config";
 import createDatabaseConnection from "./database";
-import { keepConsumingAndInserting } from "./inserter";
+import keepConsumingAndInserting from "./inserter";
 import createHealthCheckServer from "./healthCheck";
 import { createPulsarClient, createPulsarConsumer } from "./pulsar";
 import transformUnknownToError from "./util";
@@ -139,7 +139,7 @@ const exitGracefully = async (
       logger.info(
         "Keep consuming messages from Pulsar and inserting into database"
       );
-      await keepConsumingAndInserting(databaseClient, pulsarConsumer);
+      await keepConsumingAndInserting(logger, databaseClient, pulsarConsumer);
     } catch (err) {
       exitHandler(1, transformUnknownToError(err));
     }

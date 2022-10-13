@@ -1,42 +1,7 @@
-import type Pulsar from "pulsar-client";
 import type pg from "pg";
-
-// FIXME: Consider sharing types
-// Copied from waltti-apc-aggregation-test-data-generator
-
-interface CoreAggregateApcData {
-  feedPublisherId: string;
-  tripId: string;
-  startDate: string;
-  startTime: string;
-  routeId: string;
-  directionId: number;
-  countingVendorName: string;
-  timezoneName: string;
-}
-
-export type CountClass =
-  | "adult"
-  | "child"
-  | "pram"
-  | "bike"
-  | "wheelchair"
-  | "other";
-
-export interface DoorClassCount {
-  doorNumber: number;
-  countClass: CountClass;
-  in: number;
-  out: number;
-}
-
-interface StopAndDoorsAggregateApcData {
-  stopId: string;
-  stopSequence: number;
-  doorClassCounts: DoorClassCount[];
-}
-
-type AggregateApcData = CoreAggregateApcData & StopAndDoorsAggregateApcData;
+import type pino from "pino";
+import type Pulsar from "pulsar-client";
+import * as matchedApc from "./quicktype/matchedApc";
 
 type UpsertStopVisitParameterArray = [
   string, // feed_publisher_id text
@@ -52,7 +17,8 @@ type UpsertStopVisitParameterArray = [
 
 type UpsertDoorCountParameterArrayWithoutUniqueStopVisitId = [
   string, // counting_vendor_name text
-  number, // door_number smallint
+  string, // count_quality text
+  string, // door_name text
   string, // count_class text
   number, // count_door_in smallint
   number // count_door_out smallint
@@ -64,11 +30,24 @@ interface CombinedSqlParameters {
 }
 
 const transformIntoSqlParameters = (
+  logger: pino.Logger,
   message: Pulsar.Message
-): CombinedSqlParameters => {
-  // FIXME: validate the parsed data
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const parsed: AggregateApcData = JSON.parse(message.getData().toString());
+): CombinedSqlParameters | undefined => {
+  const dataString = message.getData().toString("utf8");
+  let parsed: matchedApc.MatchedApc;
+  try {
+    parsed = matchedApc.Convert.toMatchedApc(dataString);
+  } catch (err) {
+    logger.error(
+      {
+        err,
+        pulsarMessage: JSON.stringify(message),
+        pulsarMessageDataString: dataString,
+      },
+      "Could not parse message"
+    );
+    return undefined;
+  }
   const stopVisit: UpsertStopVisitParameterArray = [
     parsed.feedPublisherId,
     parsed.stopId,
@@ -85,7 +64,8 @@ const transformIntoSqlParameters = (
   const partialDoorCounts: UpsertDoorCountParameterArrayWithoutUniqueStopVisitId[] =
     parsed.doorClassCounts.map((doorClassCount) => [
       parsed.countingVendorName,
-      doorClassCount.doorNumber,
+      parsed.countQuality,
+      doorClassCount.doorName,
       doorClassCount.countClass,
       doorClassCount.in,
       doorClassCount.out,
@@ -100,9 +80,10 @@ const upsertStopVisitQuery =
   "SELECT apc_gtfs.upsert_stop_visit($1, $2, $3, $4, $5, $6, $7, $8, $9);";
 
 const upsertDoorCountQuery =
-  "SELECT apc_occupancy.upsert_door_count($1, $2, $3, $4, $5, $6);";
+  "SELECT apc_occupancy.upsert_door_count($1, $2, $3, $4, $5, $6, $7);";
 
-export const keepConsumingAndInserting = async (
+const keepConsumingAndInserting = async (
+  logger: pino.Logger,
   databaseClient: pg.Client,
   pulsarConsumer: Pulsar.Consumer
 ) => {
@@ -110,32 +91,38 @@ export const keepConsumingAndInserting = async (
   /* eslint-disable no-await-in-loop */
   for (;;) {
     const message = await pulsarConsumer.receive();
-    const { stopVisit, partialDoorCounts } =
-      transformIntoSqlParameters(message);
-    const stopVisitResult = await databaseClient.query(
-      upsertStopVisitQuery,
-      stopVisit
-    );
-    if (!stopVisitResult.rows?.length) {
-      throw new Error(
-        `Failed to get a result from query ${upsertStopVisitQuery}`
+    const parameters = transformIntoSqlParameters(logger, message);
+    if (parameters !== undefined) {
+      const { stopVisit, partialDoorCounts } = parameters;
+      const stopVisitResult = await databaseClient.query(
+        upsertStopVisitQuery,
+        stopVisit
       );
-    }
-    // FIXME: Do this cleaner:
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const uniqueStopVisitId = Object.values(stopVisitResult.rows[0])[0];
-    // forEach cannot handle async functions.
-    // eslint-disable-next-line no-restricted-syntax
-    for (const partialParameters of partialDoorCounts) {
-      const upsertDoorCountParameters = [uniqueStopVisitId].concat(
-        partialParameters
-      );
-      await databaseClient.query(
-        upsertDoorCountQuery,
-        upsertDoorCountParameters
-      );
+      if (!stopVisitResult.rows?.length) {
+        throw new Error(
+          `Failed to get a result from query ${upsertStopVisitQuery}`
+        );
+      }
+      // FIXME: Do this cleaner:
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      const uniqueStopVisitId = Object.values(stopVisitResult.rows[0])[0];
+      // forEach cannot handle async functions.
+      // eslint-disable-next-line no-restricted-syntax
+      for (const partialParameters of partialDoorCounts) {
+        const upsertDoorCountParameters = [uniqueStopVisitId].concat(
+          partialParameters
+        );
+        await databaseClient.query(
+          upsertDoorCountQuery,
+          upsertDoorCountParameters
+        );
+      }
+    } else {
+      logger.error("Could not interpret SQL parameters from message");
     }
     await pulsarConsumer.acknowledge(message);
   }
   /* eslint-enable no-await-in-loop */
 };
+
+export default keepConsumingAndInserting;
