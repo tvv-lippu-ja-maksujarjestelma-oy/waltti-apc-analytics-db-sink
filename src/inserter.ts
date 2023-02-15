@@ -94,27 +94,41 @@ const keepConsumingAndInserting = async (
     const parameters = transformIntoSqlParameters(logger, message);
     if (parameters !== undefined) {
       const { stopVisit, partialDoorCounts } = parameters;
-      const stopVisitResult = await databaseClient.query(
-        upsertStopVisitQuery,
-        stopVisit
-      );
-      if (!stopVisitResult.rows?.length) {
-        throw new Error(
-          `Failed to get a result from query ${upsertStopVisitQuery}`
+      try {
+        const stopVisitResult = await databaseClient.query(
+          upsertStopVisitQuery,
+          stopVisit
         );
-      }
-      // FIXME: Do this cleaner:
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const uniqueStopVisitId = Object.values(stopVisitResult.rows[0])[0];
-      // forEach cannot handle async functions.
-      // eslint-disable-next-line no-restricted-syntax
-      for (const partialParameters of partialDoorCounts) {
-        const upsertDoorCountParameters = [uniqueStopVisitId].concat(
-          partialParameters
-        );
-        await databaseClient.query(
-          upsertDoorCountQuery,
-          upsertDoorCountParameters
+        if (!stopVisitResult.rows?.length) {
+          throw new Error(
+            `Failed to get a result from query ${upsertStopVisitQuery}`
+          );
+        }
+        // FIXME: Do this cleaner:
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        const uniqueStopVisitId = Object.values(stopVisitResult.rows[0])[0];
+        // forEach cannot handle async functions.
+        // eslint-disable-next-line no-restricted-syntax
+        for (const partialParameters of partialDoorCounts) {
+          const upsertDoorCountParameters = [uniqueStopVisitId].concat(
+            partialParameters
+          );
+          try {
+            await databaseClient.query(
+              upsertDoorCountQuery,
+              upsertDoorCountParameters
+            );
+          } catch (doorCountErr) {
+            logger.error(
+              { err: doorCountErr },
+              "Upserting door counts into the database failed"
+            );
+          }
+        }
+      } catch (stopVisitErr) {
+        logger.error(
+          { err: stopVisitErr },
+          "Upserting a stop visit into the database failed"
         );
       }
     } else {
